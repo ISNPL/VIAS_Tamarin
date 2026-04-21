@@ -19,7 +19,8 @@ To avoid state-space explosion, verification is modularized into:
 
 ## Repository Structure
 
-VIAS_Tamarin/
+```
+tamarin-a2a-delegation/
 ├── models/
 │   ├── model_dh.spthy
 │   ├── model_direct_only.spthy
@@ -30,6 +31,7 @@ VIAS_Tamarin/
 ├── README.md
 ├── LICENSE
 └── .gitignore
+```
 
 
 ## Description
@@ -70,6 +72,7 @@ Delegation
 tamarin-prover --prove models/model_delegation_setup.spthy
 tamarin-prover --prove models/model_delegation_exec.spthy
 tamarin-prover --prove models/model_delegation_response.spthy
+tamarin-prover --prove models/model_compromise_only.spthy
 
 ## Verified Properties
 Authentication (agreement, injective agreement)
