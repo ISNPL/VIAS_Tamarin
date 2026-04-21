@@ -1,0 +1,81 @@
+theory DID_A2A_Delegation_Response
+begin
+
+builtins: diffie-hellman, signing, symmetric-encryption
+
+functions:
+  resp/2
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction OnlyOnce:
+  "All x #i #j. Once(x) @ i & Once(x) @ j ==> #i = #j"
+
+rule Register_CA:
+  [ Fr(~ltkCA) ]
+  --[ Once('register_CA') ]->
+  [ !Ltk('CA', ~ltkCA),
+    !Pk('CA', pk(~ltkCA)) ]
+
+rule Register_DC:
+  [ Fr(~ltkDC) ]
+  --[ Once('register_DC') ]->
+  [ !Ltk('DC', ~ltkDC),
+    !Pk('DC', pk(~ltkDC)) ]
+
+rule Register_B:
+  [ Fr(~ltkB) ]
+  --[ Once('register_B') ]->
+  [ !Ltk('B', ~ltkB),
+    !Pk('B', pk(~ltkB)) ]
+
+/* Abstract CA-DC channel already established */
+rule Init_CA_DC_Channel:
+  [ Fr(~kCA) ]
+  --[ Once('init_ca_dc') ]->
+  [ St_CA_DC_Recv(~kCA),
+    St_DC_From_CA_Fwd(~kCA) ]
+
+/* Abstract B execution already happened */
+rule Init_B_Response:
+  let r  = resp(~t,'ok')
+      mr = <'B','CA',r>
+  in
+  [ !Ltk('B', ltkB),
+    Fr(~kDB),
+    Fr(~t) ]
+  --[ ExecDel('B',~t),
+      GenResp('B',r) ]->
+  [ St_DC_B_Resp(~kDB),
+    Out(senc(<r, sign(mr, ltkB)>, ~kDB)) ]
+
+rule DC_Forward_Response_To_CA:
+  [ St_DC_From_CA_Fwd(kCA),
+    St_DC_B_Resp(kDB),
+    In(senc(<r, sigR>, kDB)) ]
+  --[ ForwardResp('DC','CA',r) ]->
+  [ Out(senc(<r, sigR>, kCA)) ]
+
+rule CA_Final_Verify:
+  let mr = <'B','CA',r>
+  in
+  [ St_CA_DC_Recv(kCA),
+    In(senc(<r, sigR>, kCA)),
+    !Pk('B', pkB) ]
+  --[ Eq(verify(sigR,mr,pkB),true),
+      FinalAccept('CA',r) ]->
+  [ ]
+
+lemma executable_delegation_response:
+  exists-trace
+  "Ex t #i #j.
+      ExecDel('B',t) @ i
+    & FinalAccept('CA',resp(t,'ok')) @ j"
+
+lemma final_response_authentication:
+  "All t #i.
+      FinalAccept('CA',resp(t,'ok')) @ i
+    ==> Ex #j. ExecDel('B',t) @ j & j < i"
+
+end
