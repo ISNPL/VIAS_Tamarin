@@ -29,7 +29,6 @@ tamarin-a2a-delegation/
 │   ├── model_delegation_response.spthy
 │   └── model_compromise_only.spthy
 ├── README.md
-├── LICENSE
 └── .gitignore
 ```
 
