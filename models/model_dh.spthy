@@ -1,0 +1,65 @@
+theory DID_A2A_DH_Only
+begin
+
+builtins: diffie-hellman, signing
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+rule Register_CA:
+  [ Fr(~ltkCA) ]
+  -->
+  [ !Ltk('CA', ~ltkCA),
+    !Pk('CA', pk(~ltkCA)) ]
+
+rule Register_B:
+  [ Fr(~ltkB) ]
+  -->
+  [ !Ltk('B', ~ltkB),
+    !Pk('B', pk(~ltkB)) ]
+
+rule CA_Start_Auth:
+  let m1 = <'CA','B','g'^~a>
+  in
+  [ Fr(~a), !Ltk('CA', ltkCA), !Pk('B', pkB) ]
+  --[ StartAuth('CA','B') ]->
+  [ St_CA_1(~a),
+    Out(<m1, sign(m1, ltkCA)>) ]
+
+rule B_Respond_Auth:
+  let m1 = <'CA','B',ga>
+      m2 = <'B','CA',ga,'g'^~b>
+      k  = ga^~b
+  in
+  [ In(<m1, sigCA>),
+    Fr(~b),
+    !Pk('CA', pkCA),
+    !Ltk('B', ltkB) ]
+  --[ Eq(verify(sigCA,m1,pkCA),true),
+      Running('B','CA',k) ]->
+  [ St_B_1(k),
+    Out(<m2, sign(m2, ltkB)>) ]
+
+rule CA_Finish_Auth:
+  let m2 = <'B','CA','g'^a,gb>
+      k  = gb^a
+  in
+  [ St_CA_1(a),
+    In(<m2, sigB>),
+    !Pk('B', pkB) ]
+  --[ Eq(verify(sigB,m2,pkB),true),
+      Commit('CA','B',k) ]->
+  [ ]
+
+lemma executable_dh:
+  exists-trace
+  "Ex k #i #j.
+      Running('B','CA',k) @ i
+    & Commit('CA','B',k) @ j"
+
+lemma agreement_dh:
+  "All k #i.
+      Commit('CA','B',k) @ i
+    ==> Ex #j. Running('B','CA',k) @ j"
+
+end
