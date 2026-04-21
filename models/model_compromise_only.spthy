@@ -1,0 +1,91 @@
+theory DID_A2A_Compromise_Only
+begin
+
+builtins: diffie-hellman, signing, symmetric-encryption, hashing
+
+functions:
+  vc/1,
+  card/2,
+  vp/5
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+rule Register_CA:
+  [ Fr(~ltkCA) ]
+  --> [ !Ltk('CA', ~ltkCA), !Pk('CA', pk(~ltkCA)) ]
+
+rule Register_B:
+  [ Fr(~ltkB) ]
+  --> [ !Ltk('B', ~ltkB), !Pk('B', pk(~ltkB)), !Cap('B', 'capB') ]
+
+rule Issue_Card_B:
+  let cB = vc(card('B','capB'))
+  in
+  [ !Cap('B', 'capB') ]
+  --> [ !Card('B', cB), !CardHash('B', h(cB)) ]
+
+rule CA_Start_Direct_Auth_B:
+  let m1 = <'CA','B','g'^~a>
+  in
+  [ Fr(~a), !Ltk('CA', ltkCA), !Pk('B', pkB), !Card('B', cB) ]
+  --> [ St_CA_B_1(~a), Out(<m1, sign(m1, ltkCA)>) ]
+
+rule B_Respond_Direct_Auth:
+  let m1 = <'CA','B',ga>
+      m2 = <'B','CA',ga,'g'^~b,vp('B',ga,'g'^~b,'capB',h(cB))>
+      k  = ga^~b
+  in
+  [ In(<m1, sigCA>),
+    Fr(~b),
+    !Pk('CA', pkCA),
+    !Ltk('B', ltkB),
+    !Card('B', cB),
+    !CardHash('B', h(cB)) ]
+  --[ Eq(verify(sigCA,m1,pkCA),true) ]->
+  [ St_B_Direct(k),
+    Out(<m2, sign(m2, ltkB)>) ]
+
+rule CA_Finish_Direct_Auth:
+  let m2 = <'B','CA','g'^a,gb,vp('B','g'^a,gb,'capB',h(cB))>
+      k  = gb^a
+  in
+  [ St_CA_B_1(a), In(<m2, sigB>), !Pk('B', pkB), !Card('B', cB), !CardHash('B', h(cB)) ]
+  --[ Eq(verify(sigB,m2,pkB),true) ]->
+  [ St_CA_Direct(k) ]
+
+rule CA_Send_Task_Direct:
+  [ St_CA_Direct(k), Fr(~t) ]
+  --[ SendTask('CA','B',~t) ]->
+  [ Out(senc(~t, k)) ]
+
+rule B_Recv_Task_Direct:
+  [ St_B_Direct(k), In(senc(t, k)) ]
+  --[ Exec('B',t) ]->
+  [ ]
+
+rule Reveal_CA:
+  [ !Ltk('CA', ltkCA) ]
+  --[ LtkReveal('CA') ]->
+  [ Out(ltkCA) ]
+
+rule Reveal_B:
+  [ !Ltk('B', ltkB) ]
+  --[ LtkReveal('B') ]->
+  [ Out(ltkB) ]
+
+lemma secrecy_under_no_compromise:
+  "All t #i.
+      SendTask('CA','B',t) @ i
+      & not (Ex #r. LtkReveal('CA') @ r)
+      & not (Ex #r. LtkReveal('B') @ r)
+    ==> not (Ex #j. K(t) @ j)"
+
+lemma authentication_under_compromise:
+  "All t #i.
+      Exec('B',t) @ i
+    ==> (Ex #j. SendTask('CA','B',t) @ j & j < i)
+      | (Ex #r. LtkReveal('CA') @ r & r < i)
+      | (Ex #r. LtkReveal('B') @ r & r < i)"
+
+end
