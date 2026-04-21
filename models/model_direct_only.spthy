@@ -1,0 +1,117 @@
+theory DID_A2A_Direct_Only
+begin
+
+builtins: diffie-hellman, signing, symmetric-encryption, hashing
+
+functions:
+  did/1,
+  vc/1,
+  card/2,
+  vp/5
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction OnlyOnce:
+  "All x #i #j. Once(x) @ i & Once(x) @ j ==> #i = #j"
+
+rule Register_CA:
+  [ Fr(~ltkCA), Fr(~didCA) ]
+  --[ Once('register_CA') ]->
+  [ !Ltk('CA', ~ltkCA),
+    !Pk('CA', pk(~ltkCA)),
+    !Did('CA', did(~didCA)) ]
+
+rule Register_AS:
+  [ Fr(~ltkAS), Fr(~didAS) ]
+  --[ Once('register_AS') ]->
+  [ !Ltk('AS', ~ltkAS),
+    !Pk('AS', pk(~ltkAS)),
+    !Did('AS', did(~didAS)) ]
+
+rule Register_B:
+  [ Fr(~ltkB), Fr(~didB) ]
+  --[ Once('register_B') ]->
+  [ !Ltk('B', ~ltkB),
+    !Pk('B', pk(~ltkB)),
+    !Did('B', did(~didB)),
+    !Cap('B', 'capB') ]
+
+rule Issue_Card_B:
+  let cB = vc(card('B','capB'))
+  in
+  [ !Ltk('AS', ltkAS), !Cap('B', 'capB') ]
+  --[ Once('issue_card_B') ]->
+  [ !Card('B', cB),
+    !CardHash('B', h(cB)),
+    !HasCard('CA','B',cB),
+    Out(<cB, sign(<cB,h(cB)>, ltkAS)>) ]
+
+rule CA_Start_Direct_Auth_B:
+  let m1 = <'CA','B','g'^~a>
+  in
+  [ Fr(~a),
+    !Ltk('CA', ltkCA),
+    !Pk('B', pkB),
+    !HasCard('CA','B', cB) ]
+  --[ StartAuth('CA','B') ]->
+  [ St_CA_B_1(~a),
+    Out(<m1, sign(m1, ltkCA)>) ]
+
+rule B_Respond_Direct_Auth:
+  let m1 = <'CA','B',ga>
+      m2 = <'B','CA',ga,'g'^~b,vp('B',ga,'g'^~b,'capB',h(cB))>
+      k  = ga^~b
+  in
+  [ In(<m1, sigCA>),
+    Fr(~b),
+    !Pk('CA', pkCA),
+    !Ltk('B', ltkB),
+    !Card('B', cB),
+    !CardHash('B', h(cB)),
+    !Cap('B', 'capB') ]
+  --[ Eq(verify(sigCA,m1,pkCA),true),
+      Running('B','CA',k) ]->
+  [ St_B_Direct(k),
+    Out(<m2, sign(m2, ltkB)>) ]
+
+rule CA_Finish_Direct_Auth:
+  let m2 = <'B','CA','g'^a,gb,vp('B','g'^a,gb,'capB',h(cB))>
+      k  = gb^a
+  in
+  [ St_CA_B_1(a),
+    In(<m2, sigB>),
+    !Pk('B', pkB),
+    !Card('B', cB),
+    !CardHash('B', h(cB)) ]
+  --[ Eq(verify(sigB,m2,pkB),true),
+      Commit('CA','B',k) ]->
+  [ St_CA_Direct(k) ]
+
+rule CA_Send_Task_Direct:
+  [ St_CA_Direct(k), Fr(~t) ]
+  --[ SendTask('CA','B',~t), Secret(~t) ]->
+  [ Out(senc(~t, k)) ]
+
+rule B_Recv_Task_Direct:
+  [ St_B_Direct(k), In(senc(t, k)) ]
+  --[ Exec('B',t) ]->
+  [ ]
+
+lemma executable_direct:
+  exists-trace
+  "Ex t #i #j.
+      SendTask('CA','B',t) @ i
+    & Exec('B',t) @ j"
+
+lemma direct_task_secrecy:
+  "All t #i.
+      SendTask('CA','B',t) @ i
+    ==> not (Ex #j. K(t) @ j)"
+
+lemma direct_execution_authentication:
+  "All t #i.
+      Exec('B',t) @ i
+    ==> Ex #j. SendTask('CA','B',t) @ j & j < i"
+
+end
