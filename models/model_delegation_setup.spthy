@@ -1,0 +1,105 @@
+theory DID_A2A_Delegation_Setup
+begin
+
+builtins: diffie-hellman, signing, symmetric-encryption, hashing
+
+functions:
+  vc/1,
+  card/2,
+  vp/5,
+  del/5
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction OnlyOnce:
+  "All x #i #j. Once(x) @ i & Once(x) @ j ==> #i = #j"
+
+rule Register_CA:
+  [ Fr(~ltkCA) ]
+  --[ Once('register_CA') ]->
+  [ !Ltk('CA', ~ltkCA),
+    !Pk('CA', pk(~ltkCA)) ]
+
+rule Register_DC:
+  [ Fr(~ltkDC) ]
+  --[ Once('register_DC') ]->
+  [ !Ltk('DC', ~ltkDC),
+    !Pk('DC', pk(~ltkDC)),
+    !Cap('DC', 'capDC') ]
+
+rule Issue_Card_DC:
+  let cDC = vc(card('DC','capDC'))
+  in
+  [ !Cap('DC', 'capDC') ]
+  --[ Once('issue_card_DC') ]->
+  [ !Card('DC', cDC),
+    !CardHash('DC', h(cDC)) ]
+
+rule CA_Start_Auth_DC:
+  let m1 = <'CA','DC','g'^~a>
+  in
+  [ Fr(~a),
+    !Ltk('CA', ltkCA),
+    !Pk('DC', pkDC) ]
+  --[ StartAuth('CA','DC') ]->
+  [ St_CA_DC_1(~a),
+    Out(<m1, sign(m1, ltkCA)>) ]
+
+rule DC_Respond_Auth_CA:
+  let m1 = <'CA','DC',ga>
+      m2 = <'DC','CA',ga,'g'^~b,vp('DC',ga,'g'^~b,'capDC',h(cDC))>
+      k  = ga^~b
+  in
+  [ In(<m1, sigCA>),
+    Fr(~b),
+    !Pk('CA', pkCA),
+    !Ltk('DC', ltkDC),
+    !Card('DC', cDC),
+    !CardHash('DC', h(cDC)),
+    !Cap('DC', 'capDC') ]
+  --[ Eq(verify(sigCA,m1,pkCA),true),
+      Running('DC','CA',k) ]->
+  [ St_DC_Recv(k),
+    Out(<m2, sign(m2, ltkDC)>) ]
+
+rule CA_Finish_Auth_DC:
+  let m2 = <'DC','CA','g'^a,gb,vp('DC','g'^a,gb,'capDC',h(cDC))>
+      k  = gb^a
+  in
+  [ St_CA_DC_1(a),
+    In(<m2, sigDC>),
+    !Pk('DC', pkDC),
+    !Card('DC', cDC),
+    !CardHash('DC', h(cDC)) ]
+  --[ Eq(verify(sigDC,m2,pkDC),true),
+      Commit('CA','DC',k) ]->
+  [ St_CA_DC_Send(k) ]
+
+rule CA_Delegate_Task_To_DC:
+  let tok = sign(del('CA','DC','B',~t,'capDC'), ltkCA)
+  in
+  [ St_CA_DC_Send(k),
+    !Ltk('CA', ltkCA),
+    Fr(~t) ]
+  --[ Delegate('CA','DC',~t) ]->
+  [ Out(senc(<~t, tok>, k)) ]
+
+rule DC_Recv_Delegated_Task:
+  [ St_DC_Recv(k),
+    In(senc(<t, tok>, k)) ]
+  --[ DelegationReceived('DC',t) ]->
+  [ ]
+
+lemma executable_delegation_setup:
+  exists-trace
+  "Ex t #i #j.
+      Delegate('CA','DC',t) @ i
+    & DelegationReceived('DC',t) @ j"
+
+lemma delegation_setup_authentication:
+  "All t #i.
+      DelegationReceived('DC',t) @ i
+    ==> Ex #j. Delegate('CA','DC',t) @ j & j < i"
+
+end
