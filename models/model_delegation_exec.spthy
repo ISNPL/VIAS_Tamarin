@@ -1,0 +1,102 @@
+theory DID_A2A_Delegation_Exec
+begin
+
+builtins: diffie-hellman, signing, symmetric-encryption
+
+functions:
+  del/5,
+  resp/2
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction OnlyOnce:
+  "All x #i #j. Once(x) @ i & Once(x) @ j ==> #i = #j"
+
+rule Register_CA:
+  [ Fr(~ltkCA) ]
+  --[ Once('register_CA') ]->
+  [ !Ltk('CA', ~ltkCA),
+    !Pk('CA', pk(~ltkCA)) ]
+
+rule Register_DC:
+  [ Fr(~ltkDC) ]
+  --[ Once('register_DC') ]->
+  [ !Ltk('DC', ~ltkDC),
+    !Pk('DC', pk(~ltkDC)) ]
+
+rule Register_B:
+  [ Fr(~ltkB) ]
+  --[ Once('register_B') ]->
+  [ !Ltk('B', ~ltkB),
+    !Pk('B', pk(~ltkB)) ]
+
+/* Abstract handoff from setup phase */
+rule Init_Delegation_Context:
+  let tok = sign(del('CA','DC','B',~t,'capDC'), ltkCA)
+  in
+  [ !Ltk('CA', ltkCA),
+    Fr(~t) ]
+  --[ Delegate('CA','DC',~t),
+      DelegationReady('DC',~t) ]->
+  [ St_DC_To_B_Pending(~t, tok) ]
+
+rule DC_Start_Auth_B:
+  let m1 = <'DC','B','g'^~e>
+  in
+  [ St_DC_To_B_Pending(t, tok),
+    Fr(~e),
+    !Ltk('DC', ltkDC),
+    !Pk('B', pkB) ]
+  --[ StartAuth('DC','B') ]->
+  [ St_DC_B_1(t, tok, ~e),
+    Out(<m1, sign(m1, ltkDC)>) ]
+
+rule B_Respond_Auth_DC:
+  let m1 = <'DC','B',ge>
+      m2 = <'B','DC',ge,'g'^~f>
+      k  = ge^~f
+  in
+  [ In(<m1, sigDC>),
+    Fr(~f),
+    !Pk('DC', pkDC),
+    !Ltk('B', ltkB) ]
+  --[ Eq(verify(sigDC,m1,pkDC),true),
+      Running('B','DC',k) ]->
+  [ St_B_Deleg(k),
+    Out(<m2, sign(m2, ltkB)>) ]
+
+rule DC_Finish_Auth_B_And_Forward:
+  let m2 = <'B','DC','g'^e,gf>
+      k  = gf^e
+  in
+  [ St_DC_B_1(t, tok, e),
+    In(<m2, sigB>),
+    !Pk('B', pkB) ]
+  --[ Eq(verify(sigB,m2,pkB),true),
+      Forward('DC','B',t) ]->
+  [ Out(senc(<t, tok>, k)) ]
+
+rule B_Exec_Delegated_And_Respond:
+  let r  = resp(t,'ok')
+  in
+  [ St_B_Deleg(k),
+    In(senc(<t, tok>, k)),
+    !Pk('CA', pkCA) ]
+  --[ Eq(verify(tok, del('CA','DC','B',t,'capDC'), pkCA),true),
+      ExecDel('B',t),
+      GenResp('B',r) ]->
+  [ ]
+
+lemma executable_delegated_exec:
+  exists-trace
+  "Ex t #i #j.
+      Delegate('CA','DC',t) @ i
+    & ExecDel('B',t) @ j"
+
+lemma delegated_execution_authentication:
+  "All t #i.
+      ExecDel('B',t) @ i
+    ==> Ex #j. Delegate('CA','DC',t) @ j & j < i"
+
+end
